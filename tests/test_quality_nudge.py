@@ -5,6 +5,11 @@ HN, Polymarket, Reddit (always active), X, YouTube.
 ScrapeCreators adds TikTok + Instagram as bonus sources, not core.
 """
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills" / "last30days" / "scripts"))
+
 import pytest
 from unittest.mock import patch
 
@@ -38,8 +43,8 @@ def _base_results(**overrides):
 
 def _compute(config_overrides=None, result_overrides=None, ytdlp_installed=False):
     """Helper to call compute_quality_score with mocked yt-dlp check."""
-    from scripts.lib.quality_nudge import compute_quality_score
-    from scripts.lib import youtube_yt
+    from lib.quality_nudge import compute_quality_score
+    from lib import youtube_yt
 
     config = _base_config(**(config_overrides or {}))
     results = _base_results(**(result_overrides or {}))

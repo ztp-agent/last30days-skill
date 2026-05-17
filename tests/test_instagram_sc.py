@@ -111,66 +111,60 @@ class TestSearchRetryOn500(unittest.TestCase):
     hashtag form which hits the stable hashtag-page lookup path.
     """
 
-    def _mock_response(self, status_code, json_payload=None):
-        m = MagicMock()
-        m.status_code = status_code
-        m.json.return_value = json_payload or {}
-        if status_code >= 400:
-            m.raise_for_status.side_effect = Exception(f"HTTP {status_code}")
-        else:
-            m.raise_for_status.return_value = None
-        return m
-
     def test_multiword_500_triggers_retry_with_hashtag_form(self):
         """Multi-word query 500 -> retry with collapsed hashtag form."""
-        first = self._mock_response(500)
-        second = self._mock_response(200, {"reels": []})
-        with patch.object(instagram, "_requests") as mock_requests:
-            mock_requests.get.side_effect = [first, second]
+        from lib import http as http_module
+        first_error = http_module.HTTPError("HTTP 500: Server Error", 500, "")
+        second_payload = {"reels": []}
+        with patch.object(http_module, "get") as mock_http_get:
+            mock_http_get.side_effect = [first_error, second_payload]
             instagram.search_instagram(
                 "toronto real estate", "2026-04-01", "2026-05-04",
                 depth="default", token="fake-token",
             )
-            self.assertEqual(mock_requests.get.call_count, 2)
+            self.assertEqual(mock_http_get.call_count, 2)
             # First call: original multi-word query
-            first_params = mock_requests.get.call_args_list[0].kwargs["params"]
+            first_params = mock_http_get.call_args_list[0].kwargs["params"]
             self.assertEqual(first_params["query"], "toronto real estate")
             # Second call: collapsed hashtag form
-            second_params = mock_requests.get.call_args_list[1].kwargs["params"]
+            second_params = mock_http_get.call_args_list[1].kwargs["params"]
             self.assertEqual(second_params["query"], "torontorealestate")
 
     def test_singleword_500_does_not_retry(self):
         """Single-word query 500 has no spaces to collapse - no retry."""
-        only = self._mock_response(500)
-        with patch.object(instagram, "_requests") as mock_requests:
-            mock_requests.get.return_value = only
+        from lib import http as http_module
+        only_error = http_module.HTTPError("HTTP 500: Server Error", 500, "")
+        with patch.object(http_module, "get") as mock_http_get:
+            mock_http_get.side_effect = only_error
             result = instagram.search_instagram(
                 "ozempic", "2026-04-01", "2026-05-04",
                 depth="default", token="fake-token",
             )
-            self.assertEqual(mock_requests.get.call_count, 1)
+            self.assertEqual(mock_http_get.call_count, 1)
             self.assertIn("error", result)
             self.assertEqual(result["items"], [])
 
     def test_first_call_succeeds_no_retry(self):
         """200 on first call -> retry path is never entered."""
-        ok = self._mock_response(200, {"reels": []})
-        with patch.object(instagram, "_requests") as mock_requests:
-            mock_requests.get.return_value = ok
+        from lib import http as http_module
+        ok_payload = {"reels": []}
+        with patch.object(http_module, "get") as mock_http_get:
+            mock_http_get.return_value = ok_payload
             instagram.search_instagram(
                 "toronto real estate", "2026-04-01", "2026-05-04",
                 depth="default", token="fake-token",
             )
-            self.assertEqual(mock_requests.get.call_count, 1)
+            self.assertEqual(mock_http_get.call_count, 1)
 
     def test_no_token_short_circuits(self):
         """No SCRAPECREATORS_API_KEY -> error returned without HTTP call."""
-        with patch.object(instagram, "_requests") as mock_requests:
+        from lib import http as http_module
+        with patch.object(http_module, "get") as mock_http_get:
             result = instagram.search_instagram(
                 "toronto real estate", "2026-04-01", "2026-05-04",
                 depth="default", token=None,
             )
-            mock_requests.get.assert_not_called()
+            mock_http_get.assert_not_called()
             self.assertIn("error", result)
             self.assertIn("SCRAPECREATORS_API_KEY", result["error"])
 
@@ -192,11 +186,8 @@ class TestTranscriptTimeoutConfig(unittest.TestCase):
         if self._saved_env is not None:
             os.environ["LAST30DAYS_TRANSCRIPT_TIMEOUT"] = self._saved_env
 
-    def _ok_response(self):
-        m = MagicMock()
-        m.status_code = 200
-        m.json.return_value = {"transcripts": [{"text": "hello world"}]}
-        return m
+    def _ok_payload(self):
+        return {"transcripts": [{"text": "hello world"}]}
 
     def _video_item(self, vid="abc123"):
         return {
@@ -207,102 +198,60 @@ class TestTranscriptTimeoutConfig(unittest.TestCase):
 
     def test_default_timeout_is_30s_when_nothing_set(self):
         """No env var, no kwarg -> request uses 30s, not the legacy 15s."""
+        from lib import http as http_module
         items = [self._video_item()]
-        with patch.object(instagram, "_requests") as mock_requests:
-            mock_requests.get.return_value = self._ok_response()
+        with patch.object(http_module, "get") as mock_http_get:
+            mock_http_get.return_value = self._ok_payload()
             instagram.fetch_captions(items, token="fake-token")
-            kwargs = mock_requests.get.call_args.kwargs
+            kwargs = mock_http_get.call_args.kwargs
             self.assertEqual(kwargs["timeout"], 30.0)
 
     def test_env_var_override(self):
         """LAST30DAYS_TRANSCRIPT_TIMEOUT='60' -> request uses 60s."""
+        from lib import http as http_module
         os.environ["LAST30DAYS_TRANSCRIPT_TIMEOUT"] = "60"
         items = [self._video_item()]
-        with patch.object(instagram, "_requests") as mock_requests:
-            mock_requests.get.return_value = self._ok_response()
+        with patch.object(http_module, "get") as mock_http_get:
+            mock_http_get.return_value = self._ok_payload()
             instagram.fetch_captions(items, token="fake-token")
-            kwargs = mock_requests.get.call_args.kwargs
+            kwargs = mock_http_get.call_args.kwargs
             self.assertEqual(kwargs["timeout"], 60.0)
 
     def test_explicit_timeout_kwarg_wins_over_env(self):
         """Explicit timeout= kwarg trumps the env var."""
+        from lib import http as http_module
         os.environ["LAST30DAYS_TRANSCRIPT_TIMEOUT"] = "60"
         items = [self._video_item()]
-        with patch.object(instagram, "_requests") as mock_requests:
-            mock_requests.get.return_value = self._ok_response()
+        with patch.object(http_module, "get") as mock_http_get:
+            mock_http_get.return_value = self._ok_payload()
             instagram.fetch_captions(items, token="fake-token", timeout=10)
-            kwargs = mock_requests.get.call_args.kwargs
+            kwargs = mock_http_get.call_args.kwargs
             self.assertEqual(kwargs["timeout"], 10.0)
 
     def test_config_dict_fallback_when_env_unset(self):
         """config={'LAST30DAYS_TRANSCRIPT_TIMEOUT': '45'} -> request uses 45s."""
+        from lib import http as http_module
         items = [self._video_item()]
-        with patch.object(instagram, "_requests") as mock_requests:
-            mock_requests.get.return_value = self._ok_response()
+        with patch.object(http_module, "get") as mock_http_get:
+            mock_http_get.return_value = self._ok_payload()
             instagram.fetch_captions(
                 items,
                 token="fake-token",
                 config={"LAST30DAYS_TRANSCRIPT_TIMEOUT": "45"},
             )
-            kwargs = mock_requests.get.call_args.kwargs
+            kwargs = mock_http_get.call_args.kwargs
             self.assertEqual(kwargs["timeout"], 45.0)
 
     def test_invalid_env_value_falls_back_to_default(self):
         """Garbage env var doesn't crash; falls back to 30s."""
+        from lib import http as http_module
         os.environ["LAST30DAYS_TRANSCRIPT_TIMEOUT"] = "not-a-number"
         items = [self._video_item()]
-        with patch.object(instagram, "_requests") as mock_requests:
-            mock_requests.get.return_value = self._ok_response()
+        with patch.object(http_module, "get") as mock_http_get:
+            mock_http_get.return_value = self._ok_payload()
             instagram.fetch_captions(items, token="fake-token")
-            kwargs = mock_requests.get.call_args.kwargs
+            kwargs = mock_http_get.call_args.kwargs
             self.assertEqual(kwargs["timeout"], 30.0)
-
-
-class TestSearchRetryOn500Urllib(unittest.TestCase):
-    """Lock in the urllib-path 500-retry. Pre-fix the retry was dead code on
-    the urllib branch because it checked `getattr(e, 'status', None)` while
-    `http.HTTPError` exposes the code as `status_code`. Caught by code-review
-    on 2026-05-04 (REL-001 / ADV-001, two reviewers at 0.97/0.98 confidence).
-    """
-
-    def setUp(self):
-        # Force urllib path by making instagram._requests look absent
-        self._saved_requests = instagram._requests
-        instagram._requests = None
-
-    def tearDown(self):
-        instagram._requests = self._saved_requests
-
-    def test_urllib_500_on_multiword_triggers_retry_with_hashtag_form(self):
-        from lib import http as http_module
-        first_error = http_module.HTTPError("HTTP 500: Server Error", 500, "")
-        second_payload = {"reels": []}
-        # http.get is called twice: first raises HTTPError(500), second returns dict
-        with patch.object(http_module, "get") as mock_http_get:
-            mock_http_get.side_effect = [first_error, second_payload]
-            instagram.search_instagram(
-                "toronto real estate", "2026-04-01", "2026-05-04",
-                depth="default", token="fake-token",
-            )
-            self.assertEqual(mock_http_get.call_count, 2)
-            # First call URL contains the original multi-word query
-            first_url = mock_http_get.call_args_list[0].args[0]
-            self.assertIn("query=toronto+real+estate", first_url)
-            # Second call URL contains the collapsed hashtag form
-            second_url = mock_http_get.call_args_list[1].args[0]
-            self.assertIn("query=torontorealestate", second_url)
-
-    def test_urllib_500_on_singleword_does_not_retry(self):
-        from lib import http as http_module
-        only_error = http_module.HTTPError("HTTP 500: Server Error", 500, "")
-        with patch.object(http_module, "get") as mock_http_get:
-            mock_http_get.side_effect = only_error
-            result = instagram.search_instagram(
-                "ozempic", "2026-04-01", "2026-05-04",
-                depth="default", token="fake-token",
-            )
-            self.assertEqual(mock_http_get.call_count, 1)
-            self.assertIn("error", result)
 
 
 if __name__ == "__main__":
