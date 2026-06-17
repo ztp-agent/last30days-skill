@@ -36,16 +36,10 @@ def _extract_core_subject(topic: str) -> str:
     emits "A OR B") return zero. Strip boolean operators and cap to the two
     most salient words.
     """
-    from .query import extract_core_subject
-    _THREADS_NOISE = frozenset({
-        'best', 'top', 'good', 'great', 'awesome',
-        'latest', 'new', 'news', 'update', 'updates',
-        'trending', 'hottest', 'popular', 'viral',
-        'practices', 'features', 'recommendations', 'advice',
-        'or', 'and',
-    })
-    core = extract_core_subject(topic, noise=_THREADS_NOISE, max_words=2)
+    from .query import SOCIAL_NOISE, extract_core_subject
+    core = extract_core_subject(topic, noise=SOCIAL_NOISE, max_words=2)
     return " ".join(core.rstrip("?!.").split()[:2])
+
 
 
 def _parse_date(item: Dict[str, Any]) -> Optional[str]:
