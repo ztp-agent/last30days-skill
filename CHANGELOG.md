@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - MCP Go tests (`mcp/`) now run in CI on every push/PR alongside the Python test suite, so MCP server regressions are caught before merge ([#621](https://github.com/mvanhorn/last30days-skill/issues/621))
 
+## [3.8.1] - 2026-06-22
+
+### Added
+- **Restored the v3.0.0 first-run NUX wizard (Claude Code Modal Flow).** Step 0 now restores the original guided, `AskUserQuestion`-driven onboarding that eroded over time: a welcome message, an Auto/Manual/Skip setup modal, a cookie-consent modal, the ScrapeCreators signup offer, a TikTok/Instagram `INCLUDE_SOURCES` opt-in, and a first-topic picker. It is gated to hosts with modals; hosts without (OpenClaw, Codex, Cursor, Gemini CLI) get the equivalent **Non-Modal Prose Flow**. Digg is threaded into the install messaging alongside yt-dlp everywhere it appears, the ScrapeCreators credit count is `10,000 free calls`, and the flow is locked against re-erosion by `tests/test_onboarding_contract.py`. Builds on the consent-driven foundation from #659/#660. Original wizard captured at `docs/reference/old-nux-wizard-v3.0.0.md`.
+- **Consent-driven first-run onboarding.** Step 0 now drives an in-chat consent flow instead of a silent `setup` run: the model asks before reading browser cookies (decline runs with `FROM_BROWSER=off` — still installs yt-dlp + Digg), surfaces the macOS Full Disk Access fix when a cookie read is permission-denied, and offers the ScrapeCreators GitHub signup on every first run. A successful `setup --github` now **persists `SCRAPECREATORS_API_KEY` automatically** (`setup_wizard.write_api_key`, 0o600) and masks the key in stdout so the secret never lands in the host model's captured output. Follows the first-run gate fix (#659).
+
+### Fixed
+- **First-run setup no longer runs silently.** The prior Step 0 told the model to run `setup` and "follow the wizard's prompts end-to-end", but the wizard has no prompts — so onboarding extracted cookies, installed tools, and wrote `SETUP_COMPLETE` with zero interaction and never offered the ScrapeCreators signup. Reproduced 2026-06-22 (Fredy Montero, fresh macOS).
+
 ## [3.8.0] - 2026-06-21
 
 ### Added
@@ -58,6 +67,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The X FROM lane (the subject's own timeline) now pulls up to 8 posts per handle (was 3); the about/related lanes stay modest.
+
+### Fixed
+
+- Secrets `.env` and its parent config directory are now auto-tightened to `0o600`/`0o700` after creation, and `check-config.sh`'s `check_perms` now auto-fixes loose permissions with `chmod 600` instead of warning only ([#573](https://github.com/mvanhorn/last30days-skill/issues/573))
 
 ## [3.5.0] - 2026-06-18
 
