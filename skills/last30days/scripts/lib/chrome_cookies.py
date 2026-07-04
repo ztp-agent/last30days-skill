@@ -1,7 +1,7 @@
 """Chromium-family cookie extraction for macOS.
 
 Extracts cookies from Chromium-based browser SQLite databases using only
-stdlib modules and the system openssl CLI (ships with macOS). Zero pip
+stdlib modules and macOS native CommonCrypto framework. Zero pip
 dependencies.
 
 Chromium on macOS uses v10 encryption (AES-128-CBC with Keychain-stored key).
@@ -111,7 +111,9 @@ def _derive_aes_key(passphrase: bytes) -> bytes:
 def _decrypt_v10_value(encrypted_value: bytes, aes_key: bytes, db_version: int) -> Optional[str]:
     """Decrypt a Chrome v10-encrypted cookie value.
 
-    Uses system openssl CLI for AES-128-CBC decryption (zero pip deps).
+    Uses macOS CommonCrypto framework for AES-128-CBC decryption.
+    The key stays in process memory only — never exposed via CLI args.
+
     For Chrome 130+ (db_version >= 24), strips 32-byte SHA-256 prefix after decryption.
 
     Returns decrypted string or None on failure.
@@ -121,25 +123,46 @@ def _decrypt_v10_value(encrypted_value: bytes, aes_key: bytes, db_version: int) 
     if not ciphertext:
         return None
 
-    hex_key = aes_key.hex()
-
     try:
-        result = subprocess.run(
-            [
-                "openssl", "enc", "-aes-128-cbc", "-d",
-                "-K", hex_key,
-                "-iv", CHROME_IV_HEX,
-                "-nopad",
-            ],
-            input=ciphertext,
-            capture_output=True,
-            timeout=5,
+        import ctypes
+        import ctypes.util
+
+        lib_path = ctypes.util.find_library("CommonCrypto")
+        if lib_path is None:
+            logger.debug("CommonCrypto not found on this system")
+            return None
+        lib = ctypes.cdll.LoadLibrary(lib_path)
+
+        # CommonCrypto constants
+        kCCDecrypt = 0
+        kCCAlgorithmAES128 = 0
+
+        iv_bytes = bytes.fromhex(CHROME_IV_HEX)
+
+        # Prepare output buffer (ciphertext + block size for padding)
+        output_size = len(ciphertext) + 16
+        output = ctypes.create_string_buffer(output_size)
+        data_out_moved = ctypes.c_size_t()
+
+        result = lib.CCCrypt(
+            ctypes.c_uint32(kCCDecrypt),            # op
+            ctypes.c_uint32(kCCAlgorithmAES128),     # alg
+            ctypes.c_uint32(0),                       # options (no padding)
+            aes_key,                                  # key
+            ctypes.c_size_t(len(aes_key)),           # keyLength
+            iv_bytes,                                 # iv
+            ciphertext,                               # dataIn
+            ctypes.c_size_t(len(ciphertext)),        # dataInLength
+            output,                                   # dataOut
+            ctypes.c_size_t(output_size),            # dataOutAvailable
+            ctypes.byref(data_out_moved),             # dataOutMoved
         )
-        if result.returncode != 0:
-            logger.debug("openssl decryption failed: %s", result.stderr.decode(errors="replace").strip())
+
+        if result != 0:  # kCCSuccess
+            logger.debug("CommonCrypto decryption failed with error %d", result)
             return None
 
-        decrypted = result.stdout
+        decrypted = output.raw[:data_out_moved.value]
         if not decrypted:
             return None
 
@@ -154,12 +177,6 @@ def _decrypt_v10_value(encrypted_value: bytes, aes_key: bytes, db_version: int) 
 
         return decrypted.decode("utf-8", errors="replace")
 
-    except FileNotFoundError:
-        logger.info("openssl not found — cannot decrypt Chrome cookies")
-        return None
-    except subprocess.TimeoutExpired:
-        logger.info("openssl decryption timed out")
-        return None
     except Exception as e:
         logger.debug("Chrome cookie decryption error: %s", e)
         return None
@@ -229,7 +246,7 @@ def _extract_chromium_cookies_macos(
     tmp_path = None
     try:
         tmp_fd, tmp_path = tempfile.mkstemp(suffix=".sqlite")
-        shutil.copy2(str(db_path), tmp_path)
+        shutil.copyfile(str(db_path), tmp_path)
         _lock_temp_cookie_copy(tmp_path)
     except Exception as e:
         logger.info("Failed to copy %s cookies database: %s", keychain_service, e)

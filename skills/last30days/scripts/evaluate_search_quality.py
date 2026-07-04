@@ -45,7 +45,7 @@ def _load_default_topics() -> list[tuple[str, str]]:
 DEFAULT_TOPICS = _load_default_topics()
 DEFAULT_SEARCH = ""
 DEFAULT_JUDGE_MODEL = GEMINI_FLASH_LITE
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 EVAL_CREDENTIAL_ENV_KEYS = (
     "GOOGLE_API_KEY",
     "GEMINI_API_KEY",
@@ -218,9 +218,9 @@ def call_gemini_judge(api_key: str, model: str, prompt: str) -> dict[str, Any]:
         "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
     }
     request = Request(
-        GEMINI_API_URL.format(model=model, api_key=api_key),
+        GEMINI_API_URL.format(model=model),
         data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={"X-Goog-Api-Key": api_key, "Content-Type": "application/json"},
         method="POST",
     )
     try:

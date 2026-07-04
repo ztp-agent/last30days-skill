@@ -20,7 +20,7 @@ import pytest
 import last30days as cli
 from lib import hosted, http, schema
 
-TEST_KEY = "sk_live_DUMMY_TEST_KEY_00000"
+TEST_KEY = "TEST_DUMMY_KEY_00000000000000"
 # Neutral placeholder endpoint - no product host. Ends in /api/v1 to mirror the
 # API-version-root convention the billing-link derivation relies on.
 TEST_BASE = "https://api.example.test/api/v1"

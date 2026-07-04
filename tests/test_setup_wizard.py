@@ -456,11 +456,11 @@ class TestWriteApiKey:
         with tempfile.TemporaryDirectory() as tmpdir:
             env_path = Path(tmpdir) / "subdir" / ".env"
 
-            result = setup_wizard.write_api_key(env_path, "sc_live_abcdef123456")
+            result = setup_wizard.write_api_key(env_path, "TEST_DUMMY_KEY_abcdef123456")
 
             assert result is True
             assert env_path.exists()
-            assert "SCRAPECREATORS_API_KEY=sc_live_abcdef123456" in env_path.read_text()
+            assert "SCRAPECREATORS_API_KEY=TEST_DUMMY_KEY_abcdef123456" in env_path.read_text()
             assert (env_path.stat().st_mode & 0o777) == 0o600
 
     def test_value_round_trips_through_env_loader(self):
@@ -469,10 +469,10 @@ class TestWriteApiKey:
         with tempfile.TemporaryDirectory() as tmpdir:
             env_path = Path(tmpdir) / ".env"
 
-            setup_wizard.write_api_key(env_path, "sc_live_abcdef123456")
+            setup_wizard.write_api_key(env_path, "TEST_DUMMY_KEY_abcdef123456")
 
             loaded = env_mod.load_env_file(env_path)
-            assert loaded["SCRAPECREATORS_API_KEY"] == "sc_live_abcdef123456"
+            assert loaded["SCRAPECREATORS_API_KEY"] == "TEST_DUMMY_KEY_abcdef123456"
 
     def test_idempotent_when_key_already_present(self):
         """If the key already exists, do not duplicate or overwrite it."""
@@ -538,7 +538,7 @@ class TestMaskApiKey:
     """Tests for mask_api_key() — non-secret display form."""
 
     def test_masks_long_key(self):
-        masked = setup_wizard.mask_api_key("sc_live_abcdef123456")
+        masked = setup_wizard.mask_api_key("TEST_DUMMY_KEY_abcdef123456")
         assert "abcdef" not in masked
         assert masked.endswith("3456")
         assert masked.startswith("sc_")
